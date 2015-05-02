@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Bloop where
+module Plumbing where
 
 import Crypto.Hash.SHA1 (hashlazy)
 import qualified Data.ByteString.Lazy.Char8 as Lazy
@@ -10,7 +10,7 @@ import System.Directory (createDirectory)
 
 -- main = fileSum "main.hs" >>= print
 -- main = storeObject "test content"
-main = print $ (blobHash "test content") == "08cf6101416f0ce0dda3c80e627f333854c4085c"
+-- main = print $ (blobHash "test content") == "08cf6101416f0ce0dda3c80e627f333854c4085c"
 
 bloopDir = ".bloop"
 bloopObjectsDirName = "objects"
@@ -41,4 +41,3 @@ storeObject bs = do
 -- read an object given its hash
 readObject hash = fmap Zlib.decompress $ Lazy.readFile path
   where path = hashToPath hash
-
