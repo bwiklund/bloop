@@ -6,8 +6,8 @@ import Crypto.Hash.SHA1 (hashlazy)
 import qualified Data.ByteString.Lazy.Char8 as Lazy
 import Data.ByteString.Builder (toLazyByteString, byteStringHex)
 import qualified Codec.Compression.Zlib as Zlib
-import System.Directory (createDirectory)
-import System.FilePath.Posix ((</>))
+import System.Directory (createDirectory, createDirectoryIfMissing)
+import System.FilePath ((</>), dropFileName)
 
 
 -- some paths in case we need to override these
@@ -36,6 +36,7 @@ pathForHash hash = bloopObjectsFullPath </> prefix </> suffix
 
 -- store an object, returning its hash
 storeObject bs = do
+  createDirectoryIfMissing True (dropFileName path)
   Lazy.writeFile path compressed
   return hash
   where path = pathForHash hash
