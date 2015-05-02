@@ -40,8 +40,14 @@ storeObject bs = do
   return hash
   where path = pathForHash hash
         hash = Lazy.unpack $ blobHash bs
-        compressed = Zlib.compress bs
+        compressed = compressObject bs
 
 -- read an object given its hash
-readObject hash = fmap Zlib.decompress $ Lazy.readFile path
+readObject hash = fmap decompressObject $ Lazy.readFile path
   where path = pathForHash hash
+
+-- to make it easy to swap out compression algorithms
+compressObject = Zlib.compress
+
+-- to make it easy to swap out compression algorithms
+decompressObject = Zlib.decompress

@@ -17,6 +17,11 @@ tests = TestList $ map TestCase
       "object path"
       ".bloop/objects/08/cf6101416f0ce0dda3c80e627f333854c4085c"
       (pathForHash "08cf6101416f0ce0dda3c80e627f333854c4085c")
+
+  , assertEqual
+      "object compression"
+      "the quick brown fox etc"
+      (decompressObject $ compressObject "the quick brown fox etc")
   ]
 
 main = do
