@@ -9,19 +9,22 @@ import qualified Codec.Compression.Zlib as Zlib
 import System.Directory (createDirectory)
 import System.FilePath.Posix ((</>))
 
--- main = fileSum "main.hs" >>= print
--- main = storeObject "test content"
 
+-- some paths in case we need to override these
 bloopDir = ".bloop"
 bloopObjectsDirName = "objects"
 bloopObjectsFullPath = bloopDir </> bloopObjectsDirName
 
-initRepo = mapM_ createDirectory [ bloopDir
-                                 , bloopObjectsFullPath
-                                 ]
+-- create a new repo (or fail if one already exists)
+initRepo = mapM_ createDirectory
+  [ bloopDir
+  , bloopObjectsFullPath
+  ]
 
+-- read a file in and hash it... remove me because i belong elsewhere
 fileSum path = fmap blobHash $ Lazy.readFile path
 
+-- convert a bytestream to a hash
 blobHash blob = toHexHash headerAndContents
   where toHexHash = toLazyByteString . byteStringHex . hashlazy
         len = Lazy.length blob
