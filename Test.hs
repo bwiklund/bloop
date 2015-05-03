@@ -25,9 +25,14 @@ tests = TestList $ map TestCase
       (decompressSerialized $ compressSerialized "the quick brown fox etc")
 
   , assertEqual
-      "tree entry serialization"
+      "tree -> blob entry serialization"
       (treeEntryToLine (Blob (Lazy.pack "08cf6101416f0ce0dda3c80e627f333854c4085c") "foo.txt"))
-      "100755 08cf6101416f0ce0dda3c80e627f333854c4085c foo.txt"
+      "100755 blob 08cf6101416f0ce0dda3c80e627f333854c4085c foo.txt"
+
+  , assertEqual
+      "tree -> tree entry serialization"
+      (treeEntryToLine (Tree (Lazy.pack "08cf6101416f0ce0dda3c80e627f333854c4085c") "fooDirectory" []))
+      "040000 tree 08cf6101416f0ce0dda3c80e627f333854c4085c fooDirectory"
   ]
 
 main = do
