@@ -21,6 +21,10 @@ initRepo = mapM_ createDirectory
   , bloopObjectsFullPath
   ]
 
+-- deserialized objects
+-- TODO: separate object from object details (blob/tree/commit/tag)
+data BloopTree = Tree {hash :: Lazy.ByteString, entries :: [BloopTree]} | Blob {hash :: Lazy.ByteString, fileName :: FilePath}
+
 -- read a file in and hash it... remove me because i belong elsewhere
 fileSum path = fmap blobHash $ Lazy.readFile path
 
@@ -41,14 +45,23 @@ storeObject bs = do
   return hash
   where path = pathForHash hash
         hash = Lazy.unpack $ blobHash bs
-        compressed = compressObject bs
+        compressed = compressSerialized bs
 
 -- read an object given its hash
-readObject hash = fmap decompressObject $ Lazy.readFile path
+readObject hash = fmap decompressSerialized $ Lazy.readFile path
   where path = pathForHash hash
 
 -- to make it easy to swap out compression algorithms
-compressObject = Zlib.compress
+compressSerialized = Zlib.compress
 
 -- to make it easy to swap out compression algorithms
-decompressObject = Zlib.decompress
+decompressSerialized = Zlib.decompress
+
+-- TODO: implement other object types
+-- serializeObject :: BloopTree -> ByteString
+serializeObject (Tree {entries = es}) = unlines $ map (Lazy.unpack . treeEntryToLine) es
+
+-- TODO: if we're matching git, the hashes are binary and the names are null terminated.
+treeEntryToLine :: BloopTree -> Lazy.ByteString
+treeEntryToLine (Blob {hash = blobHash, fileName = blobFileName}) = Lazy.concat ["100755 ", blobHash, " ", Lazy.pack blobFileName]
+treeEntryToLine _ = "undefined"
