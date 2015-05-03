@@ -6,7 +6,7 @@ import Crypto.Hash.SHA1 (hashlazy)
 import qualified Data.ByteString.Lazy.Char8 as Lazy
 import Data.ByteString.Builder (toLazyByteString, byteStringHex)
 import qualified Codec.Compression.Zlib as Zlib
-import System.Directory (createDirectory, createDirectoryIfMissing)
+import System.Directory (createDirectory, createDirectoryIfMissing, getDirectoryContents)
 import System.FilePath ((</>), dropFileName)
 
 
@@ -62,10 +62,16 @@ decompressSerialized = Zlib.decompress
 
 serializeObject :: BloopTree -> Lazy.ByteString
 serializeObject (Tree {entries = treeEntries}) = Lazy.pack $ unlines $ map (Lazy.unpack . treeEntryToLine) treeEntries
--- serializeObject (Blob {fileContents = _fileContents}) = _fileContents
+serializeObject (Blob {fileContents = _fileContents}) = _fileContents
 
 -- TODO: if we're matching git, the hashes are binary and the names are null terminated.
 treeEntryToLine :: BloopTree -> Lazy.ByteString
 treeEntryToLine (Blob {hash = entryHash, fileName = entryFileName}) = Lazy.concat ["100755 blob ", entryHash, " ", Lazy.pack entryFileName]
 treeEntryToLine (Tree {hash = entryHash, fileName = entryFileName}) = Lazy.concat ["040000 tree ", entryHash, " ", Lazy.pack entryFileName]
 -- treeEntryToLine _ = "undefined"
+
+-- scanDirectory :: FilePath -> BloopTree
+-- scanDirectory path = do
+--   contents <- getDirectoryContents path
+--   return $ filterPaths contents
+--   where filterPaths = filter (\path -> path /= "." && path /= ".." && path /= ".bloop" && path /= ".git") -- TODO: .bloopignore
