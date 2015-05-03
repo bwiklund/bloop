@@ -26,24 +26,24 @@ tests = TestList $ map TestCase
 
   , assertEqual
       "tree -> blob entry serialization"
-      "100755 blob 08cf6101416f0ce0dda3c80e627f333854c4085c foo.txt"
-      (treeEntryToLine (Blob ("08cf6101416f0ce0dda3c80e627f333854c4085c") "foo.txt"))
+      (Lazy.pack "100755 blob 08cf6101416f0ce0dda3c80e627f333854c4085c foo.txt")
+      (treeEntryToLine (Blob ("08cf6101416f0ce0dda3c80e627f333854c4085c") "foo.txt" "test content"))
 
   , assertEqual
       "tree -> tree entry serialization"
-      "040000 tree 08cf6101416f0ce0dda3c80e627f333854c4085c fooDirectory"
+      (Lazy.pack "040000 tree 08cf6101416f0ce0dda3c80e627f333854c4085c fooDirectory")
       (treeEntryToLine (Tree ("08cf6101416f0ce0dda3c80e627f333854c4085c") "fooDirectory" []))
 
   , assertEqual
       "tree with multiple entry serialization"
-      (unlines [
+      (Lazy.pack $ unlines [
         "100755 blob 08cf6101416f0ce0dda3c80e627f333854c4085c foo1.txt",
         "100755 blob 08cf6101416f0ce0dda3c80e627f333854c4085c foo2.txt",
         "040000 tree 08cf6101416f0ce0dda3c80e627f333854c4085c fooDirectory"
       ])
       (serializeObject (Tree ("08cf6101416f0ce0dda3c80e627f333854c4085c") "fooDirectory" [
-        (Blob ("08cf6101416f0ce0dda3c80e627f333854c4085c") "foo1.txt"),
-        (Blob ("08cf6101416f0ce0dda3c80e627f333854c4085c") "foo2.txt"),
+        (Blob ("08cf6101416f0ce0dda3c80e627f333854c4085c") "foo1.txt" "test content"),
+        (Blob ("08cf6101416f0ce0dda3c80e627f333854c4085c") "foo2.txt" "test content"),
         (Tree ("08cf6101416f0ce0dda3c80e627f333854c4085c") "fooDirectory" [])
       ]))
   ]

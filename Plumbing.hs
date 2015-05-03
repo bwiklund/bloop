@@ -25,7 +25,7 @@ initRepo = mapM_ createDirectory
 -- TODO: separate object from object details (blob/tree/commit/tag)
 data BloopTree
   = Tree {hash :: Lazy.ByteString, fileName :: FilePath, entries :: [BloopTree]}
-  | Blob {hash :: Lazy.ByteString, fileName :: FilePath}
+  | Blob {hash :: Lazy.ByteString, fileName :: FilePath, fileContents :: Lazy.ByteString}
 
 -- read a file in and hash it... remove me because i belong elsewhere
 fileSum path = fmap blobHash $ Lazy.readFile path
@@ -40,7 +40,8 @@ blobHash blob = toHexHash headerAndContents
 pathForHash hash = bloopObjectsFullPath </> prefix </> suffix
   where (prefix, suffix) = splitAt 2 hash
 
--- store an object, returning its hash
+-- store a serialized object, returning its hash
+-- storeObject :: Lazy.ByteString -> IO String
 storeObject bs = do
   createDirectoryIfMissing True (dropFileName path)
   Lazy.writeFile path compressed
@@ -59,9 +60,9 @@ compressSerialized = Zlib.compress
 -- to make it easy to swap out compression algorithms
 decompressSerialized = Zlib.decompress
 
--- TODO: implement other object types
--- serializeObject :: BloopTree -> ByteString
-serializeObject (Tree {entries = es}) = unlines $ map (Lazy.unpack . treeEntryToLine) es
+serializeObject :: BloopTree -> Lazy.ByteString
+serializeObject (Tree {entries = treeEntries}) = Lazy.pack $ unlines $ map (Lazy.unpack . treeEntryToLine) treeEntries
+-- serializeObject (Blob {fileContents = _fileContents}) = _fileContents
 
 -- TODO: if we're matching git, the hashes are binary and the names are null terminated.
 treeEntryToLine :: BloopTree -> Lazy.ByteString
