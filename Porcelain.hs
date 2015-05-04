@@ -12,11 +12,14 @@ usage = "TODO: usage"
 processArgs [] = putStrLn usage
 processArgs (command:args)
   | command == "init" = initRepo
-  | command == "mark" = markObjectCommand args >>= putStrLn . unlines
-  | command == "cat"  = catObjectCommand args >>= Lazy.putStrLn
+  | command == "mark" = markObjectsCommand args >>= putStr . unlines
+  | command == "cat"  = catObjectCommand args >>= Lazy.putStr
   | otherwise         = putStrLn usage
 
-markObjectCommand args = mapM Lazy.readFile args >>= (mapM storeObject)
+-- TODO: this is probably duplicating work done in `addTree`
+markObjectsCommand args = do
+  hashes <- mapM Lazy.readFile args >>= mapM storeObject
+  return hashes
 
 catObjectCommand args = readObject hash
   where hash = head args

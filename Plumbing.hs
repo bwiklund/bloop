@@ -11,14 +11,15 @@ import System.FilePath ((</>), dropFileName)
 
 
 -- some paths in case we need to override these
-bloopDir = ".bloop"
+bloopDirName = ".bloop"
 bloopObjectsDirName = "objects"
-bloopObjectsFullPath = bloopDir </> bloopObjectsDirName
+
+bloopObjectsPath = bloopDirName </> bloopObjectsDirName
 
 -- create a new repo (or fail if one already exists)
 initRepo = mapM_ createDirectory
-  [ bloopDir
-  , bloopObjectsFullPath
+  [ bloopDirName
+  , bloopObjectsPath
   ]
 
 -- deserialized objects
@@ -37,7 +38,7 @@ blobHash blob = toHexHash headerAndContents
         headerAndContents = Lazy.concat ["blob ", Lazy.pack $ show len, "\0", blob]
 
 -- where to store a hash
-pathForHash hash = bloopObjectsFullPath </> prefix </> suffix
+pathForHash hash = bloopObjectsPath </> prefix </> suffix
   where (prefix, suffix) = splitAt 2 hash
 
 -- store a serialized object, returning its hash
@@ -54,6 +55,22 @@ storeObject bs = do
 readObject hash = fmap decompressSerialized $ Lazy.readFile path
   where path = pathForHash hash
 
+-- TODO: make recursive
+-- add all blobs in a directory, then write a tree with their records
+addTree path = do
+  filePaths <- scanDirectory path
+  fileContents <- mapM Lazy.readFile filePaths
+  hashes <- mapM storeObject fileContents
+  --TODO: don't fake the filenames and object types
+  let fixmeTreeContents = Lazy.unlines $ map (\h -> Lazy.concat ["100644 blob ", Lazy.pack h, " ", "foo.bar"]) hashes
+  storeObject fixmeTreeContents
+
+-- scanDirectory :: FilePath -> BloopTree
+scanDirectory path = do
+  contents <- getDirectoryContents path
+  return $ filterPaths contents
+  where filterPaths = filter (\path -> path /= "." && path /= ".." && path /= ".bloop" && path /= ".git") -- TODO: .bloopignore
+
 -- to make it easy to swap out compression algorithms
 compressSerialized = Zlib.compress
 
@@ -69,9 +86,3 @@ treeEntryToLine :: BloopTree -> Lazy.ByteString
 treeEntryToLine (Blob {hash = entryHash, fileName = entryFileName}) = Lazy.concat ["100755 blob ", entryHash, " ", Lazy.pack entryFileName]
 treeEntryToLine (Tree {hash = entryHash, fileName = entryFileName}) = Lazy.concat ["040000 tree ", entryHash, " ", Lazy.pack entryFileName]
 -- treeEntryToLine _ = "undefined"
-
--- scanDirectory :: FilePath -> BloopTree
--- scanDirectory path = do
---   contents <- getDirectoryContents path
---   return $ filterPaths contents
---   where filterPaths = filter (\path -> path /= "." && path /= ".." && path /= ".bloop" && path /= ".git") -- TODO: .bloopignore
