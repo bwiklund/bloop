@@ -27,6 +27,7 @@ initRepo = mapM_ createDirectory
 data BloopTree
   = Tree {hash :: Lazy.ByteString, fileName :: FilePath, entries :: [BloopTree]}
   | Blob {hash :: Lazy.ByteString, fileName :: FilePath, fileContents :: Lazy.ByteString}
+  deriving (Eq, Show)
 
 -- read a file in and hash it... remove me because i belong elsewhere
 fileSum path = fmap blobHash $ Lazy.readFile path
@@ -62,8 +63,19 @@ addTree path = do
   fileContents <- mapM Lazy.readFile filePaths
   hashes <- mapM storeObject fileContents
   --TODO: don't fake the filenames and object types
-  let fixmeTreeContents = Lazy.unlines $ map (\h -> Lazy.concat ["100644 blob ", Lazy.pack h, " ", "foo.bar"]) hashes
+  let fixmeTreeContents = Lazy.unlines $ map (\h -> Lazy.concat ["100644 blob ", Lazy.pack h, " ", Lazy.pack h, ".bar"]) hashes
   storeObject fixmeTreeContents
+
+-- TODO: make recursive
+instantiateTree hash = do
+  treeRecordContents <- readObject hash
+  let recordLines = Lazy.lines treeRecordContents
+      blobs = map recordLineToBlob recordLines
+  mapM createFileFromObject blobs
+  where createFileFromObject (Blob hash fileName _) =
+          readObject (Lazy.unpack hash) >>= Lazy.writeFile (fileName ++ "foo")
+        recordLineToBlob str = Blob hash (Lazy.unpack fileName) ""
+          where (perm:btype:hash:fileName:_) = Lazy.words str
 
 -- scanDirectory :: FilePath -> BloopTree
 scanDirectory path = do
