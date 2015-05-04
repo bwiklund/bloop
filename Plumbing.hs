@@ -13,10 +13,10 @@ import System.FilePath ((</>), dropFileName)
 -- some paths in case we need to override these
 bloopDirName = ".bloop"
 bloopObjectsDirName = "objects"
-
 bloopObjectsPath = bloopDirName </> bloopObjectsDirName
 
 -- create a new repo (or fail if one already exists)
+initRepo :: IO ()
 initRepo = mapM_ createDirectory
   [ bloopDirName
   , bloopObjectsPath
@@ -35,17 +35,20 @@ createTree fileName entries = Tree h fileName entries
   where h = blobHash $ serializeTreeEntries entries
 
 -- convert a bytestream to a hash
-blobHash blob = toHexHash headerAndContents
+blobHash :: Lazy.ByteString -> Lazy.ByteString
+blobHash bs = toHexHash headerAndContents
   where toHexHash = toLazyByteString . byteStringHex . hashlazy
-        len = Lazy.length blob
-        headerAndContents = Lazy.concat ["blob ", Lazy.pack $ show len, "\0", blob]
+        len = Lazy.length bs
+        headerAndContents = Lazy.concat ["blob ", Lazy.pack $ show len, "\0", bs]
 
 -- where to store a hash
+pathForHash :: String -> FilePath
 pathForHash hash = bloopObjectsPath </> prefix </> suffix
   where (prefix, suffix) = splitAt 2 hash
 
 -- store a serialized object, returning its hash
 -- storeObject :: Lazy.ByteString -> IO String
+storeObject :: Lazy.ByteString -> IO String
 storeObject bs = do
   createDirectoryIfMissing True (dropFileName path)
   Lazy.writeFile path compressed
@@ -55,11 +58,13 @@ storeObject bs = do
         compressed = compressSerialized bs
 
 -- read an object given its hash
+readObject :: String -> IO Lazy.ByteString
 readObject hash = fmap decompressSerialized $ Lazy.readFile path
   where path = pathForHash hash
 
 -- TODO: make recursive
 -- add all blobs in a directory, then write a tree with their records
+addTree :: FilePath -> IO String
 addTree path = do
   filePaths <- scanDirectory path
   fileContents <- mapM Lazy.readFile filePaths
@@ -82,22 +87,25 @@ instantiateBlob ::  FilePath -> BloopTree -> IO ()
 instantiateBlob path (Blob hash fileName _) =
   readObject (Lazy.unpack hash) >>= Lazy.writeFile (path </> fileName)
 
--- scanDirectory :: FilePath -> BloopTree
+scanDirectory :: FilePath -> IO [FilePath]
 scanDirectory path = do
   contents <- getDirectoryContents path
   return $ filterPaths contents
   where filterPaths = filter (\path -> path /= "." && path /= ".." && path /= ".bloop" && path /= ".git") -- TODO: .bloopignore
 
 -- to make it easy to swap out compression algorithms
+compressSerialized :: Lazy.ByteString -> Lazy.ByteString
 compressSerialized = Zlib.compress
 
 -- to make it easy to swap out compression algorithms
+decompressSerialized :: Lazy.ByteString -> Lazy.ByteString
 decompressSerialized = Zlib.decompress
 
 serializeObject :: BloopTree -> Lazy.ByteString
 serializeObject (Tree {entries = treeEntries}) = serializeTreeEntries treeEntries
 serializeObject (Blob {fileContents = _fileContents}) = _fileContents
 
+serializeTreeEntries :: [BloopTree] -> Lazy.ByteString
 serializeTreeEntries treeEntries = Lazy.pack $ unlines $ map (Lazy.unpack . treeEntryToLine) treeEntries
 
 -- TODO: if we're matching git, the hashes are binary and the names are null terminated.
@@ -106,5 +114,6 @@ treeEntryToLine (Blob {hash = entryHash, fileName = entryFileName}) = Lazy.conca
 treeEntryToLine (Tree {hash = entryHash, fileName = entryFileName}) = Lazy.concat ["040000 tree ", entryHash, " ", Lazy.pack entryFileName]
 -- treeEntryToLine _ = "undefined"
 
+treeLineToNode :: Lazy.ByteString -> BloopTree
 treeLineToNode str = Blob hash (Lazy.unpack fileName) ""
   where (perm:btype:hash:fileName:_) = Lazy.words str
