@@ -3,6 +3,7 @@
 module Plumbing where
 
 import Crypto.Hash.SHA1 (hashlazy)
+import qualified Data.ByteString.Char8 as Strict
 import qualified Data.ByteString.Lazy.Char8 as Lazy
 import Data.ByteString.Builder (toLazyByteString, byteStringHex)
 import qualified Codec.Compression.Zlib as Zlib
@@ -22,12 +23,14 @@ initRepo = mapM_ createDirectory
   , bloopObjectsPath
   ]
 
+type BloopHash = String
+
 -- deserialized objects
 -- TODO: separate object from object details (blob/tree/commit/tag)
 -- TODO: break into two data types, objects (the actual data) and pointers (the records in tree objects)?
 data BloopTree
-  = Tree {hash :: Lazy.ByteString, fileName :: FilePath, entries :: [BloopTree]}
-  | Blob {hash :: Lazy.ByteString, fileName :: FilePath, fileContents :: Lazy.ByteString}
+  = Tree {hash :: BloopHash, fileName :: FilePath, entries :: [BloopTree]}
+  | Blob {hash :: BloopHash, fileName :: FilePath, fileContents :: Lazy.ByteString}
   deriving (Eq, Show)
 
 createTree :: FilePath -> [BloopTree] -> BloopTree
@@ -35,8 +38,8 @@ createTree fileName entries = Tree h fileName entries
   where h = blobHash $ serializeTreeEntries entries
 
 -- convert a bytestream to a hash
-blobHash :: Lazy.ByteString -> Lazy.ByteString
-blobHash bs = toHexHash headerAndContents
+blobHash :: Lazy.ByteString -> BloopHash
+blobHash bs = Lazy.unpack $ toHexHash headerAndContents
   where toHexHash = toLazyByteString . byteStringHex . hashlazy
         len = Lazy.length bs
         headerAndContents = Lazy.concat ["blob ", Lazy.pack $ show len, "\0", bs]
@@ -54,24 +57,24 @@ storeObject bs = do
   Lazy.writeFile path compressed
   return hash
   where path = pathForHash hash
-        hash = Lazy.unpack $ blobHash bs
+        hash = blobHash bs
         compressed = compressSerialized bs
 
 -- read an object given its hash
-readObject :: String -> IO Lazy.ByteString
+readObject :: BloopHash -> IO Lazy.ByteString
 readObject hash = fmap decompressSerialized $ Lazy.readFile path
   where path = pathForHash hash
 
 -- TODO: make recursive
 -- add all blobs in a directory, then write a tree with their records
-addTree :: FilePath -> IO String
+addTree :: FilePath -> IO BloopHash
 addTree path = do
   filePaths <- scanDirectory path
   fileContents <- mapM Lazy.readFile filePaths
   hashes <- mapM storeObject fileContents
   --TODO: don't fake the object types
   -- Lazy.concat ["100644 blob ", Lazy.pack h, " ", Lazy.pack fn]
-  let fixmeTreeEntries = zipWith (\h fn -> Blob (Lazy.pack h) fn "") hashes filePaths
+  let fixmeTreeEntries = zipWith (\h fn -> Blob h fn "") hashes filePaths
       newTree = createTree "." fixmeTreeEntries
   storeObject $ serializeObject newTree
 
@@ -85,7 +88,7 @@ instantiateTree hash path = do
 
 instantiateBlob ::  FilePath -> BloopTree -> IO ()
 instantiateBlob path (Blob hash fileName _) =
-  readObject (Lazy.unpack hash) >>= Lazy.writeFile (path </> fileName)
+  readObject hash >>= Lazy.writeFile (path </> fileName)
 
 scanDirectory :: FilePath -> IO [FilePath]
 scanDirectory path = do
@@ -110,10 +113,10 @@ serializeTreeEntries treeEntries = Lazy.pack $ unlines $ map (Lazy.unpack . tree
 
 -- TODO: if we're matching git, the hashes are binary and the names are null terminated.
 treeEntryToLine :: BloopTree -> Lazy.ByteString
-treeEntryToLine (Blob {hash = entryHash, fileName = entryFileName}) = Lazy.concat ["100755 blob ", entryHash, " ", Lazy.pack entryFileName]
-treeEntryToLine (Tree {hash = entryHash, fileName = entryFileName}) = Lazy.concat ["040000 tree ", entryHash, " ", Lazy.pack entryFileName]
+treeEntryToLine (Blob {hash = entryHash, fileName = entryFileName}) = Lazy.concat ["100755 blob ", Lazy.pack entryHash, " ", Lazy.pack entryFileName]
+treeEntryToLine (Tree {hash = entryHash, fileName = entryFileName}) = Lazy.concat ["040000 tree ", Lazy.pack entryHash, " ", Lazy.pack entryFileName]
 -- treeEntryToLine _ = "undefined"
 
 treeLineToNode :: Lazy.ByteString -> BloopTree
-treeLineToNode str = Blob hash (Lazy.unpack fileName) ""
+treeLineToNode str = Blob (Lazy.unpack hash) (Lazy.unpack fileName) ""
   where (perm:btype:hash:fileName:_) = Lazy.words str
