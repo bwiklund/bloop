@@ -62,18 +62,19 @@ addTree path = do
   filePaths <- scanDirectory path
   fileContents <- mapM Lazy.readFile filePaths
   hashes <- mapM storeObject fileContents
-  --TODO: don't fake the filenames and object types
-  let fixmeTreeContents = Lazy.unlines $ map (\h -> Lazy.concat ["100644 blob ", Lazy.pack h, " ", Lazy.pack h, ".bar"]) hashes
+  --TODO: don't fake the object types
+  let fixmeTreeContents = Lazy.unlines $ zipWith (\h fn -> Lazy.concat ["100644 blob ", Lazy.pack h, " ", Lazy.pack fn]) hashes filePaths
   storeObject fixmeTreeContents
 
--- TODO: make recursive
-instantiateTree hash = do
+-- TODO: make recursive and dry up
+instantiateTree hash path = do
   treeRecordContents <- readObject hash
   let recordLines = Lazy.lines treeRecordContents
       blobs = map recordLineToBlob recordLines
+  createDirectoryIfMissing True path
   mapM createFileFromObject blobs
   where createFileFromObject (Blob hash fileName _) =
-          readObject (Lazy.unpack hash) >>= Lazy.writeFile (fileName ++ "foo")
+          readObject (Lazy.unpack hash) >>= Lazy.writeFile (path </> fileName)
         recordLineToBlob str = Blob hash (Lazy.unpack fileName) ""
           where (perm:btype:hash:fileName:_) = Lazy.words str
 
