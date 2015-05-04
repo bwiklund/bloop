@@ -24,13 +24,15 @@ initRepo = mapM_ createDirectory
 
 -- deserialized objects
 -- TODO: separate object from object details (blob/tree/commit/tag)
+-- TODO: break into two data types, objects (the actual data) and pointers (the records in tree objects)?
 data BloopTree
   = Tree {hash :: Lazy.ByteString, fileName :: FilePath, entries :: [BloopTree]}
   | Blob {hash :: Lazy.ByteString, fileName :: FilePath, fileContents :: Lazy.ByteString}
   deriving (Eq, Show)
 
--- read a file in and hash it... remove me because i belong elsewhere
-fileSum path = fmap blobHash $ Lazy.readFile path
+createTree :: FilePath -> [BloopTree] -> BloopTree
+createTree fileName entries = Tree h fileName entries
+  where h = blobHash $ serializeTreeEntries entries
 
 -- convert a bytestream to a hash
 blobHash blob = toHexHash headerAndContents
@@ -63,20 +65,22 @@ addTree path = do
   fileContents <- mapM Lazy.readFile filePaths
   hashes <- mapM storeObject fileContents
   --TODO: don't fake the object types
-  let fixmeTreeContents = Lazy.unlines $ zipWith (\h fn -> Lazy.concat ["100644 blob ", Lazy.pack h, " ", Lazy.pack fn]) hashes filePaths
-  storeObject fixmeTreeContents
+  -- Lazy.concat ["100644 blob ", Lazy.pack h, " ", Lazy.pack fn]
+  let fixmeTreeEntries = zipWith (\h fn -> Blob (Lazy.pack h) fn "") hashes filePaths
+      newTree = createTree "." fixmeTreeEntries
+  storeObject $ serializeObject newTree
 
 -- TODO: make recursive and dry up
+instantiateTree :: String -> FilePath -> IO ()
 instantiateTree hash path = do
   treeRecordContents <- readObject hash
-  let recordLines = Lazy.lines treeRecordContents
-      blobs = map recordLineToBlob recordLines
+  let blobs = map treeLineToNode $ Lazy.lines treeRecordContents
   createDirectoryIfMissing True path
-  mapM createFileFromObject blobs
-  where createFileFromObject (Blob hash fileName _) =
-          readObject (Lazy.unpack hash) >>= Lazy.writeFile (path </> fileName)
-        recordLineToBlob str = Blob hash (Lazy.unpack fileName) ""
-          where (perm:btype:hash:fileName:_) = Lazy.words str
+  mapM_ (instantiateBlob path) blobs
+
+instantiateBlob ::  FilePath -> BloopTree -> IO ()
+instantiateBlob path (Blob hash fileName _) =
+  readObject (Lazy.unpack hash) >>= Lazy.writeFile (path </> fileName)
 
 -- scanDirectory :: FilePath -> BloopTree
 scanDirectory path = do
@@ -91,11 +95,16 @@ compressSerialized = Zlib.compress
 decompressSerialized = Zlib.decompress
 
 serializeObject :: BloopTree -> Lazy.ByteString
-serializeObject (Tree {entries = treeEntries}) = Lazy.pack $ unlines $ map (Lazy.unpack . treeEntryToLine) treeEntries
+serializeObject (Tree {entries = treeEntries}) = serializeTreeEntries treeEntries
 serializeObject (Blob {fileContents = _fileContents}) = _fileContents
+
+serializeTreeEntries treeEntries = Lazy.pack $ unlines $ map (Lazy.unpack . treeEntryToLine) treeEntries
 
 -- TODO: if we're matching git, the hashes are binary and the names are null terminated.
 treeEntryToLine :: BloopTree -> Lazy.ByteString
 treeEntryToLine (Blob {hash = entryHash, fileName = entryFileName}) = Lazy.concat ["100755 blob ", entryHash, " ", Lazy.pack entryFileName]
 treeEntryToLine (Tree {hash = entryHash, fileName = entryFileName}) = Lazy.concat ["040000 tree ", entryHash, " ", Lazy.pack entryFileName]
 -- treeEntryToLine _ = "undefined"
+
+treeLineToNode str = Blob hash (Lazy.unpack fileName) ""
+  where (perm:btype:hash:fileName:_) = Lazy.words str
