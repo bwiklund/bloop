@@ -3,20 +3,28 @@ version:             0.0.0.0
 build-type:          Simple
 cabal-version:       >=1.8
 
-executable exec
-  hs-source-dirs:    .
-  main-is:           Porcelain.hs
+library
+  hs-source-dirs:    src/lib
   build-depends:     base
                    , bytestring
                    , directory
                    , filepath
                    , cryptohash
                    , zlib
+  exposed-modules:   Plumbing
+
+executable bloop-cli
+  hs-source-dirs:    src/cli
+  main-is:           Porcelain.hs
+  build-depends:     base
+                   , bytestring
+                   , bloop
 
 test-suite spec
   hs-source-dirs:    test
-  main-is:           Test.hs
+  main-is:           Main.hs
   type:              exitcode-stdio-1.0
   build-depends:     base
+                   , bytestring
                    , HUnit
                    , bloop

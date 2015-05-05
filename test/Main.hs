@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Test (main) where
+module Main (main) where
 
 import Test.HUnit
 import System.Exit
@@ -8,6 +8,7 @@ import qualified Data.ByteString.Lazy.Char8 as Lazy
 
 import Plumbing
 
+tests :: Test
 tests = TestList $ map TestCase
   [ assertEqual
       "blob hash"
@@ -48,6 +49,7 @@ tests = TestList $ map TestCase
       ]))
   ]
 
+main :: IO ()
 main = do
-  counts <- runTestTT tests
-  if errors counts + failures counts == 0 then exitSuccess else exitFailure
+  result <- runTestTT tests
+  if errors result + failures result == 0 then exitSuccess else exitFailure
