@@ -15,7 +15,7 @@ library
 
 executable bloop-cli
   hs-source-dirs:    src/cli
-  main-is:           Porcelain.hs
+  main-is:           Main.hs
   build-depends:     base
                    , bytestring
                    , bloop

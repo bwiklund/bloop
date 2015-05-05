@@ -2,11 +2,7 @@ module Porcelain where
 
 import Plumbing
 
-import System.Environment
 import qualified Data.ByteString.Lazy.Char8 as Lazy
-
-main :: IO ()
-main = getArgs >>= processArgs
 
 usage = "TODO: usage"
 
@@ -22,5 +18,6 @@ processArgs (command:args)
 markObjectsCommand :: [FilePath] -> IO [BloopHash]
 markObjectsCommand args = mapM Lazy.readFile args >>= mapM storeObject
 
-catObjectCommand args = readObject hash
-  where hash = head args
+catObjectCommand :: [BloopHash] -> IO Lazy.ByteString
+catObjectCommand args = readObject objectHash
+  where objectHash = head args
