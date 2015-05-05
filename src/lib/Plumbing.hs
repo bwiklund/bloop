@@ -4,7 +4,7 @@ module Plumbing where
 
 import Crypto.Hash.SHA1 (hashlazy)
 import qualified Data.ByteString.Lazy.Char8 as Lazy
-import Data.ByteString.Builder (toLazyByteString, byteStringHex)
+import Data.ByteString.Lazy.Builder (toLazyByteString, byteStringHex)
 import qualified Codec.Compression.Zlib as Zlib
 import System.Directory (createDirectory, createDirectoryIfMissing, getDirectoryContents)
 import System.FilePath ((</>), dropFileName)
