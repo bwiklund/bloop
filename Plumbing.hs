@@ -3,12 +3,12 @@
 module Plumbing where
 
 import Crypto.Hash.SHA1 (hashlazy)
-import qualified Data.ByteString.Char8 as Strict
 import qualified Data.ByteString.Lazy.Char8 as Lazy
 import Data.ByteString.Builder (toLazyByteString, byteStringHex)
 import qualified Codec.Compression.Zlib as Zlib
 import System.Directory (createDirectory, createDirectoryIfMissing, getDirectoryContents)
 import System.FilePath ((</>), dropFileName)
+import Control.Applicative ((<$>))
 
 
 -- some paths in case we need to override these
@@ -34,8 +34,8 @@ data BloopTree
   deriving (Eq, Show)
 
 createTree :: FilePath -> [BloopTree] -> BloopTree
-createTree fileName entries = Tree h fileName entries
-  where h = blobHash $ serializeTreeEntries entries
+createTree treePath treeEntries = Tree h treePath treeEntries
+  where h = blobHash $ serializeTreeEntries treeEntries
 
 -- convert a bytestream to a hash
 blobHash :: Lazy.ByteString -> BloopHash
@@ -46,8 +46,8 @@ blobHash bs = Lazy.unpack $ toHexHash headerAndContents
 
 -- where to store a hash
 pathForHash :: String -> FilePath
-pathForHash hash = bloopObjectsPath </> prefix </> suffix
-  where (prefix, suffix) = splitAt 2 hash
+pathForHash h = bloopObjectsPath </> prefix </> suffix
+  where (prefix, suffix) = splitAt 2 h
 
 -- store a serialized object, returning its hash
 -- storeObject :: Lazy.ByteString -> IO String
@@ -55,46 +55,47 @@ storeObject :: Lazy.ByteString -> IO String
 storeObject bs = do
   createDirectoryIfMissing True (dropFileName path)
   Lazy.writeFile path compressed
-  return hash
-  where path = pathForHash hash
-        hash = blobHash bs
+  return objHash
+  where path = pathForHash objHash
+        objHash = blobHash bs
         compressed = compressSerialized bs
 
 -- read an object given its hash
 readObject :: BloopHash -> IO Lazy.ByteString
-readObject hash = fmap decompressSerialized $ Lazy.readFile path
-  where path = pathForHash hash
+readObject bHash = decompressSerialized <$> Lazy.readFile path
+  where path = pathForHash bHash
 
 -- TODO: make recursive
 -- add all blobs in a directory, then write a tree with their records
 addTree :: FilePath -> IO BloopHash
 addTree path = do
   filePaths <- scanDirectory path
-  fileContents <- mapM Lazy.readFile filePaths
-  hashes <- mapM storeObject fileContents
+  bs <- mapM Lazy.readFile filePaths
+  hashes <- mapM storeObject bs
   --TODO: don't fake the object types
-  -- Lazy.concat ["100644 blob ", Lazy.pack h, " ", Lazy.pack fn]
   let fixmeTreeEntries = zipWith (\h fn -> Blob h fn "") hashes filePaths
       newTree = createTree "." fixmeTreeEntries
   storeObject $ serializeObject newTree
 
 -- TODO: make recursive and dry up
 instantiateTree :: String -> FilePath -> IO ()
-instantiateTree hash path = do
-  treeRecordContents <- readObject hash
+instantiateTree _hash path = do
+  treeRecordContents <- readObject _hash
   let blobs = map treeLineToNode $ Lazy.lines treeRecordContents
   createDirectoryIfMissing True path
-  mapM_ (instantiateBlob path) blobs
+  mapM_ (instantiateBlobOrTree path) blobs
 
-instantiateBlob ::  FilePath -> BloopTree -> IO ()
-instantiateBlob path (Blob hash fileName _) =
-  readObject hash >>= Lazy.writeFile (path </> fileName)
+instantiateBlobOrTree ::  FilePath -> BloopTree -> IO ()
+instantiateBlobOrTree relativePath (Blob bHash bFileName _) =
+  readObject bHash >>= Lazy.writeFile (relativePath </> bFileName)
+instantiateBlobOrTree _ Tree{} = undefined
 
+-- return a list of files in a directory, excluding stuff that should be ignored
 scanDirectory :: FilePath -> IO [FilePath]
 scanDirectory path = do
   contents <- getDirectoryContents path
   return $ filterPaths contents
-  where filterPaths = filter (\path -> path /= "." && path /= ".." && path /= ".bloop" && path /= ".git") -- TODO: .bloopignore
+  where filterPaths = filter (\p -> p /= "." && p /= ".." && p /= ".bloop" && p /= ".git") -- TODO: .bloopignore
 
 -- to make it easy to swap out compression algorithms
 compressSerialized :: Lazy.ByteString -> Lazy.ByteString
@@ -118,5 +119,5 @@ treeEntryToLine (Tree {hash = entryHash, fileName = entryFileName}) = Lazy.conca
 -- treeEntryToLine _ = "undefined"
 
 treeLineToNode :: Lazy.ByteString -> BloopTree
-treeLineToNode str = Blob (Lazy.unpack hash) (Lazy.unpack fileName) ""
-  where (perm:btype:hash:fileName:_) = Lazy.words str
+treeLineToNode str = Blob (Lazy.unpack bHash) (Lazy.unpack bFileName) ""
+  where (_:_:bHash:bFileName:_) = Lazy.words str

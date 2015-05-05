@@ -5,10 +5,12 @@ import Plumbing
 import System.Environment
 import qualified Data.ByteString.Lazy.Char8 as Lazy
 
+main :: IO ()
 main = getArgs >>= processArgs
 
 usage = "TODO: usage"
 
+processArgs :: [String] -> IO ()
 processArgs [] = putStrLn usage
 processArgs (command:args)
   | command == "init" = initRepo
@@ -17,9 +19,8 @@ processArgs (command:args)
   | otherwise         = putStrLn usage
 
 -- TODO: this is probably duplicating work done in `addTree`
-markObjectsCommand args = do
-  hashes <- mapM Lazy.readFile args >>= mapM storeObject
-  return hashes
+markObjectsCommand :: [FilePath] -> IO [BloopHash]
+markObjectsCommand args = mapM Lazy.readFile args >>= mapM storeObject
 
 catObjectCommand args = readObject hash
   where hash = head args
