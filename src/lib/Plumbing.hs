@@ -1,5 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+-- throughout this project, I try name IO functions in a way to describes what kind of IO they do.
+-- read: only reads.
+-- write: only writes.
+-- readAndStore: self explanatory. these should (ideally) be short functions that compose read/write counterparts.
+
 module Plumbing where
 
 import Crypto.Hash.SHA1 (hashlazy)
@@ -8,6 +13,7 @@ import Data.ByteString.Lazy.Builder (toLazyByteString, byteStringHex)
 import qualified Codec.Compression.Zlib as Zlib
 import System.Directory (createDirectory, createDirectoryIfMissing, getDirectoryContents)
 import System.FilePath ((</>), dropFileName)
+import System.Posix.Files (isDirectory, getFileStatus)
 import Control.Applicative ((<$>))
 
 
@@ -33,8 +39,8 @@ data BloopTree
   | Blob {hash :: BloopHash, fileName :: FilePath, fileContents :: Lazy.ByteString}
   deriving (Eq, Show)
 
-createTree :: FilePath -> [BloopTree] -> BloopTree
-createTree treePath treeEntries = Tree h treePath treeEntries
+buildTree :: FilePath -> [BloopTree] -> BloopTree
+buildTree treePath treeEntries = Tree h treePath treeEntries
   where h = blobHash $ serializeTreeEntries treeEntries
 
 -- convert a bytestream to a hash
@@ -65,17 +71,26 @@ readObject :: BloopHash -> IO Lazy.ByteString
 readObject bHash = decompressSerialized <$> Lazy.readFile path
   where path = pathForHash bHash
 
--- TODO: make recursive
 -- add all blobs in a directory, then write a tree with their records
-addTree :: FilePath -> IO BloopHash
-addTree path = do
-  filePaths <- scanDirectory path
-  bs <- mapM Lazy.readFile filePaths
-  hashes <- mapM storeObject bs
-  --TODO: don't fake the object types
-  let fixmeTreeEntries = zipWith (\h fn -> Blob h fn "") hashes filePaths
-      newTree = createTree "." fixmeTreeEntries
-  storeObject $ serializeObject newTree
+-- TODO: store recursively. currently directories are not saved, only read in.
+readAndStoreTree :: FilePath -> IO BloopHash
+readAndStoreTree fPath = readTree fPath >>= storeObject . serializeObject
+
+readTree :: FilePath -> IO BloopTree
+readTree fPath = do
+  filePaths <- scanDirectory fPath
+  objects <- mapM (\fName -> readFileToObject $ fPath </> fName) filePaths
+  return $ buildTree "." objects
+
+readFileToObject :: FilePath -> IO BloopTree
+readFileToObject fPath = do
+  isDir <- isDirectory <$> getFileStatus fPath
+  if isDir
+    then readTree fPath
+    else do
+      bs <- Lazy.readFile fPath
+      let bHash = blobHash bs
+      return $ Blob bHash fPath bs
 
 -- TODO: make recursive and dry up
 instantiateTree :: String -> FilePath -> IO ()

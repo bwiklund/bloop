@@ -9,6 +9,7 @@ library
                    , bytestring == 0.10.4.0
                    , directory
                    , filepath
+                   , unix
                    , cryptohash
                    , zlib
   exposed-modules:   Plumbing
