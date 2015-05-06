@@ -1,0 +1,5 @@
+#!/bin/bash
+
+# This is just here for convenience while developing.
+
+ghci -isrc:src/lib -package=bytestring-0.10.4.0 src/lib/Plumbing.hs "$@"
