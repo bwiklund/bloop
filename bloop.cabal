@@ -6,7 +6,7 @@ cabal-version:       >=1.8
 library
   hs-source-dirs:    src/lib
   build-depends:     base
-                   , bytestring
+                   , bytestring == 0.10.4.0
                    , directory
                    , filepath
                    , cryptohash
@@ -17,7 +17,7 @@ executable bloop-cli
   hs-source-dirs:    src/cli
   main-is:           Main.hs
   build-depends:     base
-                   , bytestring
+                   , bytestring == 0.10.4.0
                    , bloop
 
 test-suite spec
@@ -25,6 +25,6 @@ test-suite spec
   main-is:           Main.hs
   type:              exitcode-stdio-1.0
   build-depends:     base
-                   , bytestring
+                   , bytestring == 0.10.4.0
                    , HUnit
                    , bloop
