@@ -1,3 +1,14 @@
-.bloop
+# standard haskell stuff
+*~
+*.o
+*.o_p
+*.hi
+*.swp
 dist
+.cabal-sandbox/
+cabal.sandbox.config
+
+
+# bloop specific stuff
+.bloop
 bloopsandbox
