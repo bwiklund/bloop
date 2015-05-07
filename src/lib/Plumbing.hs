@@ -37,6 +37,17 @@ bloopDirName = ".bloop"
 bloopObjectsDirName = "objects"
 bloopObjectsPath = bloopDirName </> bloopObjectsDirName
 
+-- convert a bytestream to a hash
+blobHash :: Lazy.ByteString -> BloopHash
+blobHash bs = Lazy.unpack $ toHexHash headerAndContents
+  where toHexHash = toLazyByteString . byteStringHex . hashlazy
+        len = Lazy.length bs
+        headerAndContents = Lazy.concat ["blob ", Lazy.pack $ show len, "\0", bs]
+
+-- where to store a hash
+pathForHash :: BloopHash -> FilePath
+pathForHash h = bloopObjectsPath </> prefix </> suffix
+  where (prefix, suffix) = splitAt 2 h
 
 -- to make it easy to swap out compression algorithms
 compressSerialized :: Lazy.ByteString -> Lazy.ByteString
@@ -81,18 +92,6 @@ initRepo = mapM_ createDirectory
   [ bloopDirName
   , bloopObjectsPath
   ]
-
--- convert a bytestream to a hash
-blobHash :: Lazy.ByteString -> BloopHash
-blobHash bs = Lazy.unpack $ toHexHash headerAndContents
-  where toHexHash = toLazyByteString . byteStringHex . hashlazy
-        len = Lazy.length bs
-        headerAndContents = Lazy.concat ["blob ", Lazy.pack $ show len, "\0", bs]
-
--- where to store a hash
-pathForHash :: BloopHash -> FilePath
-pathForHash h = bloopObjectsPath </> prefix </> suffix
-  where (prefix, suffix) = splitAt 2 h
 
 -- store a serialized object, returning its hash
 storeObject :: Lazy.ByteString -> IO BloopHash
@@ -150,12 +149,8 @@ instantiateTreeRecursive tHash tPath = do
 -- TODO: this probably belongs scoped inside the above fn. like definitely.
 -- TODO: BloopTree should be BloopRecord. i'm passing in partial objects (blobs with no content) which is janky.
 instantiateTreeEntryRecursive :: BloopTree -> FilePath -> IO ()
-instantiateTreeEntryRecursive o@(Blob bHash bFileName _) relativePath = do
-  putStrLn $ show o
-  readObject bHash >>= Lazy.writeFile (relativePath </> bFileName)
-instantiateTreeEntryRecursive o@(Tree tHash tFileName _) relativePath = do
-  putStrLn $ show o
-  instantiateTreeRecursive tHash (relativePath </> tFileName)
+instantiateTreeEntryRecursive (Blob bHash bFileName _) relativePath = readObject bHash >>= Lazy.writeFile (relativePath </> bFileName)
+instantiateTreeEntryRecursive (Tree tHash tFileName _) relativePath = instantiateTreeRecursive tHash (relativePath </> tFileName)
 
 -- return a list of files in a directory, excluding stuff that should be ignored
 scanDirectory :: FilePath -> IO [FilePath]
