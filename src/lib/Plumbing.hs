@@ -23,12 +23,12 @@ type BloopHash = String
 -- deserialized objects
 -- TODO: separate object from object details (blob/tree/commit/tag)
 -- TODO: break into two data types, objects (the actual data) and pointers (the records in tree objects)?
-data BloopTree
-  = Tree {hash :: BloopHash, fileName :: FilePath, entries :: [BloopTree]}
+data BloopObject
+  = Tree {hash :: BloopHash, fileName :: FilePath, entries :: [BloopObject]}
   | Blob {hash :: BloopHash, fileName :: FilePath, fileContents :: Lazy.ByteString}
   deriving (Eq, Show)
 
-buildTree :: FilePath -> [BloopTree] -> BloopTree
+buildTree :: FilePath -> [BloopObject] -> BloopObject
 buildTree treePath treeEntries = Tree h treePath treeEntries
   where h = blobHash $ serializeTreeEntries treeEntries
 
@@ -57,22 +57,22 @@ compressSerialized = Zlib.compress
 decompressSerialized :: Lazy.ByteString -> Lazy.ByteString
 decompressSerialized = Zlib.decompress
 
-serializeObject :: BloopTree -> Lazy.ByteString
+serializeObject :: BloopObject -> Lazy.ByteString
 serializeObject (Tree {entries = treeEntries}) = serializeTreeEntries treeEntries
 serializeObject (Blob {fileContents = _fileContents}) = _fileContents
 
-serializeTreeEntries :: [BloopTree] -> Lazy.ByteString
+serializeTreeEntries :: [BloopObject] -> Lazy.ByteString
 serializeTreeEntries treeEntries = Lazy.pack $ unlines $ map (Lazy.unpack . treeEntryToLine) treeEntries
 
 -- TODO: if we're matching git, the hashes are binary and the names are null terminated.
-treeEntryToLine :: BloopTree -> Lazy.ByteString
+treeEntryToLine :: BloopObject -> Lazy.ByteString
 treeEntryToLine blob@Blob{} = Lazy.pack $ concat ["100755 blob ", hash blob, " ", fileName blob]
 treeEntryToLine tree@Tree{} = Lazy.pack $ concat ["040000 tree ", hash tree, " ", fileName tree]
 -- treeEntryToLine _ = "undefined"
 
 -- TODO: record types instead of full object types
 -- TODO: perms for files
-treeLineToRecord :: Lazy.ByteString -> BloopTree
+treeLineToRecord :: Lazy.ByteString -> BloopObject
 treeLineToRecord str =
   case bType of
     "blob" -> Blob bHash bFileName ""
@@ -113,7 +113,7 @@ readObject bHash = decompressSerialized <$> Lazy.readFile path
 readAndStoreTreeRecursive :: FilePath -> IO BloopHash
 readAndStoreTreeRecursive fPath = readTreeRecursive fPath >>= storeTreeRecursive
 
-readTreeRecursive :: FilePath -> IO BloopTree
+readTreeRecursive :: FilePath -> IO BloopObject
 readTreeRecursive fPath = do
   filePaths <- scanDirectory fPath
   objects <- mapM (\fName -> readFileToObject $ fPath </> fName) filePaths
@@ -122,7 +122,7 @@ readTreeRecursive fPath = do
 -- store a tree recursively, depth first. that way, if it's interrupted, the
 -- top tree won't be written yet, so will be atomic (other than filling the
 -- object db with unreferenced objects)
-storeTreeRecursive :: BloopTree -> IO BloopHash
+storeTreeRecursive :: BloopObject -> IO BloopHash
 storeTreeRecursive tree = do
   mapM_ storeEntryRecursive (entries tree)
   serializeAndStore tree
@@ -130,7 +130,7 @@ storeTreeRecursive tree = do
         storeEntryRecursive b@Blob{} = serializeAndStore b
         serializeAndStore = storeObject . serializeObject
 
-readFileToObject :: FilePath -> IO BloopTree
+readFileToObject :: FilePath -> IO BloopObject
 readFileToObject fPath = do
   isDir <- isDirectory <$> getFileStatus fPath
   if isDir
@@ -147,8 +147,8 @@ instantiateTreeRecursive tHash tPath = do
 
 -- reads the object from the database and instantiates it.
 -- TODO: this probably belongs scoped inside the above fn. like definitely.
--- TODO: BloopTree should be BloopRecord. i'm passing in partial objects (blobs with no content) which is janky.
-instantiateTreeEntryRecursive :: BloopTree -> FilePath -> IO ()
+-- TODO: BloopObject should be BloopRecord. i'm passing in partial objects (blobs with no content) which is janky.
+instantiateTreeEntryRecursive :: BloopObject -> FilePath -> IO ()
 instantiateTreeEntryRecursive (Blob bHash bFileName _) relativePath = readObject bHash >>= Lazy.writeFile (relativePath </> bFileName)
 instantiateTreeEntryRecursive (Tree tHash tFileName _) relativePath = instantiateTreeRecursive tHash (relativePath </> tFileName)
 
