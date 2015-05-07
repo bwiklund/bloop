@@ -12,7 +12,7 @@ import qualified Data.ByteString.Lazy.Char8 as Lazy
 import Data.ByteString.Lazy.Builder (toLazyByteString, byteStringHex)
 import qualified Codec.Compression.Zlib as Zlib
 import System.Directory (createDirectory, createDirectoryIfMissing, getDirectoryContents)
-import System.FilePath ((</>), dropFileName)
+import System.FilePath ((</>), dropFileName, takeFileName)
 import System.Posix.Files (isDirectory, getFileStatus)
 import Control.Applicative ((<$>))
 
@@ -73,24 +73,35 @@ readObject bHash = decompressSerialized <$> Lazy.readFile path
 
 -- add all blobs in a directory, then write a tree with their records
 -- TODO: store recursively. currently directories are not saved, only read in.
-readAndStoreTree :: FilePath -> IO BloopHash
-readAndStoreTree fPath = readTree fPath >>= storeObject . serializeObject
+readAndStoreTreeRecursive :: FilePath -> IO BloopHash
+readAndStoreTreeRecursive fPath = readTreeRecursive fPath >>= storeTreeRecursive
 
-readTree :: FilePath -> IO BloopTree
-readTree fPath = do
+readTreeRecursive :: FilePath -> IO BloopTree
+readTreeRecursive fPath = do
   filePaths <- scanDirectory fPath
   objects <- mapM (\fName -> readFileToObject $ fPath </> fName) filePaths
-  return $ buildTree "." objects
+  return $ buildTree (takeFileName fPath) objects
+
+-- store a tree recursively, depth first. that way, if it's interrupted, the
+-- top tree won't be written yet, so will be atomic (other than filling the
+-- object db with unreferenced objects)
+storeTreeRecursive :: BloopTree -> IO BloopHash
+storeTreeRecursive tree = do
+  mapM_ storeEntryRecursive (entries tree)
+  serializeAndStore tree
+  where storeEntryRecursive t@Tree{} = storeTreeRecursive t
+        storeEntryRecursive b@Blob{} = serializeAndStore b
+        serializeAndStore = storeObject . serializeObject
 
 readFileToObject :: FilePath -> IO BloopTree
 readFileToObject fPath = do
   isDir <- isDirectory <$> getFileStatus fPath
   if isDir
-    then readTree fPath
+    then readTreeRecursive fPath
     else do
       bs <- Lazy.readFile fPath
       let bHash = blobHash bs
-      return $ Blob bHash fPath bs
+      return $ Blob bHash (takeFileName fPath) bs
 
 -- TODO: make recursive and dry up
 instantiateTree :: String -> FilePath -> IO ()
