@@ -17,17 +17,6 @@ import System.Posix.Files (isDirectory, getFileStatus)
 import Control.Applicative ((<$>))
 
 
--- some paths in case we need to override these
-bloopDirName = ".bloop"
-bloopObjectsDirName = "objects"
-bloopObjectsPath = bloopDirName </> bloopObjectsDirName
-
--- create a new repo (or fail if one already exists)
-initRepo :: IO ()
-initRepo = mapM_ createDirectory
-  [ bloopDirName
-  , bloopObjectsPath
-  ]
 
 type BloopHash = String
 
@@ -42,6 +31,50 @@ data BloopTree
 buildTree :: FilePath -> [BloopTree] -> BloopTree
 buildTree treePath treeEntries = Tree h treePath treeEntries
   where h = blobHash $ serializeTreeEntries treeEntries
+
+-- some paths in case we need to override these
+bloopDirName = ".bloop"
+bloopObjectsDirName = "objects"
+bloopObjectsPath = bloopDirName </> bloopObjectsDirName
+
+
+-- to make it easy to swap out compression algorithms
+compressSerialized :: Lazy.ByteString -> Lazy.ByteString
+compressSerialized = Zlib.compress
+
+-- to make it easy to swap out compression algorithms
+decompressSerialized :: Lazy.ByteString -> Lazy.ByteString
+decompressSerialized = Zlib.decompress
+
+serializeObject :: BloopTree -> Lazy.ByteString
+serializeObject (Tree {entries = treeEntries}) = serializeTreeEntries treeEntries
+serializeObject (Blob {fileContents = _fileContents}) = _fileContents
+
+serializeTreeEntries :: [BloopTree] -> Lazy.ByteString
+serializeTreeEntries treeEntries = Lazy.pack $ unlines $ map (Lazy.unpack . treeEntryToLine) treeEntries
+
+-- TODO: if we're matching git, the hashes are binary and the names are null terminated.
+treeEntryToLine :: BloopTree -> Lazy.ByteString
+treeEntryToLine blob@Blob{} = Lazy.pack $ concat ["100755 blob ", hash blob, " ", fileName blob]
+treeEntryToLine tree@Tree{} = Lazy.pack $ concat ["040000 tree ", hash tree, " ", fileName tree]
+-- treeEntryToLine _ = "undefined"
+
+treeLineToNode :: Lazy.ByteString -> BloopTree
+treeLineToNode str = Blob (Lazy.unpack bHash) (Lazy.unpack bFileName) ""
+  where (_:_:bHash:bFileName:_) = Lazy.words str
+
+
+
+-- Everything IO related.
+
+
+
+-- create a new repo (or fail if one already exists)
+initRepo :: IO ()
+initRepo = mapM_ createDirectory
+  [ bloopDirName
+  , bloopObjectsPath
+  ]
 
 -- convert a bytestream to a hash
 blobHash :: Lazy.ByteString -> BloopHash
@@ -121,28 +154,3 @@ scanDirectory path = do
   contents <- getDirectoryContents path
   return $ filterPaths contents
   where filterPaths = filter (\p -> p /= "." && p /= ".." && p /= ".bloop" && p /= ".git") -- TODO: .bloopignore
-
--- to make it easy to swap out compression algorithms
-compressSerialized :: Lazy.ByteString -> Lazy.ByteString
-compressSerialized = Zlib.compress
-
--- to make it easy to swap out compression algorithms
-decompressSerialized :: Lazy.ByteString -> Lazy.ByteString
-decompressSerialized = Zlib.decompress
-
-serializeObject :: BloopTree -> Lazy.ByteString
-serializeObject (Tree {entries = treeEntries}) = serializeTreeEntries treeEntries
-serializeObject (Blob {fileContents = _fileContents}) = _fileContents
-
-serializeTreeEntries :: [BloopTree] -> Lazy.ByteString
-serializeTreeEntries treeEntries = Lazy.pack $ unlines $ map (Lazy.unpack . treeEntryToLine) treeEntries
-
--- TODO: if we're matching git, the hashes are binary and the names are null terminated.
-treeEntryToLine :: BloopTree -> Lazy.ByteString
-treeEntryToLine (Blob {hash = entryHash, fileName = entryFileName}) = Lazy.concat ["100755 blob ", Lazy.pack entryHash, " ", Lazy.pack entryFileName]
-treeEntryToLine (Tree {hash = entryHash, fileName = entryFileName}) = Lazy.concat ["040000 tree ", Lazy.pack entryHash, " ", Lazy.pack entryFileName]
--- treeEntryToLine _ = "undefined"
-
-treeLineToNode :: Lazy.ByteString -> BloopTree
-treeLineToNode str = Blob (Lazy.unpack bHash) (Lazy.unpack bFileName) ""
-  where (_:_:bHash:bFileName:_) = Lazy.words str
