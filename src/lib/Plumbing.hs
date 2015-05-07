@@ -51,13 +51,12 @@ blobHash bs = Lazy.unpack $ toHexHash headerAndContents
         headerAndContents = Lazy.concat ["blob ", Lazy.pack $ show len, "\0", bs]
 
 -- where to store a hash
-pathForHash :: String -> FilePath
+pathForHash :: BloopHash -> FilePath
 pathForHash h = bloopObjectsPath </> prefix </> suffix
   where (prefix, suffix) = splitAt 2 h
 
 -- store a serialized object, returning its hash
--- storeObject :: Lazy.ByteString -> IO String
-storeObject :: Lazy.ByteString -> IO String
+storeObject :: Lazy.ByteString -> IO BloopHash
 storeObject bs = do
   createDirectoryIfMissing True (dropFileName path)
   Lazy.writeFile path compressed
@@ -104,14 +103,14 @@ readFileToObject fPath = do
       return $ Blob bHash (takeFileName fPath) bs
 
 -- TODO: make recursive and dry up
-instantiateTree :: String -> FilePath -> IO ()
-instantiateTree _hash path = do
-  treeRecordContents <- readObject _hash
+instantiateTree :: BloopHash -> FilePath -> IO ()
+instantiateTree tHash tPath = do
+  treeRecordContents <- readObject tHash
   let blobs = map treeLineToNode $ Lazy.lines treeRecordContents
-  createDirectoryIfMissing True path
-  mapM_ (instantiateBlobOrTree path) blobs
+  createDirectoryIfMissing True tPath
+  mapM_ (instantiateBlobOrTree tPath) blobs
 
-instantiateBlobOrTree ::  FilePath -> BloopTree -> IO ()
+instantiateBlobOrTree :: FilePath -> BloopTree -> IO ()
 instantiateBlobOrTree relativePath (Blob bHash bFileName _) =
   readObject bHash >>= Lazy.writeFile (relativePath </> bFileName)
 instantiateBlobOrTree _ Tree{} = undefined
