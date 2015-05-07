@@ -59,9 +59,15 @@ treeEntryToLine blob@Blob{} = Lazy.pack $ concat ["100755 blob ", hash blob, " "
 treeEntryToLine tree@Tree{} = Lazy.pack $ concat ["040000 tree ", hash tree, " ", fileName tree]
 -- treeEntryToLine _ = "undefined"
 
-treeLineToNode :: Lazy.ByteString -> BloopTree
-treeLineToNode str = Blob (Lazy.unpack bHash) (Lazy.unpack bFileName) ""
-  where (_:_:bHash:bFileName:_) = Lazy.words str
+-- TODO: record types instead of full object types
+-- TODO: perms for files
+treeLineToRecord :: Lazy.ByteString -> BloopTree
+treeLineToRecord str =
+  case bType of
+    "blob" -> Blob bHash bFileName ""
+    "tree" -> Tree bHash bFileName []
+    _      -> error "not a valid object type"
+  where (_:bType:bHash:bFileName:_) = words $ Lazy.unpack str
 
 
 
@@ -130,23 +136,26 @@ readFileToObject fPath = do
   isDir <- isDirectory <$> getFileStatus fPath
   if isDir
     then readTreeRecursive fPath
-    else do
+    else do -- TODO: make this a one liner
       bs <- Lazy.readFile fPath
       let bHash = blobHash bs
       return $ Blob bHash (takeFileName fPath) bs
 
--- TODO: make recursive and dry up
-instantiateTree :: BloopHash -> FilePath -> IO ()
-instantiateTree tHash tPath = do
-  treeRecordContents <- readObject tHash
-  let blobs = map treeLineToNode $ Lazy.lines treeRecordContents
+instantiateTreeRecursive :: BloopHash -> FilePath -> IO ()
+instantiateTreeRecursive tHash tPath = do
   createDirectoryIfMissing True tPath
-  mapM_ (instantiateBlobOrTree tPath) blobs
+  readObject tHash >>= mapM_ ((\entry -> instantiateTreeEntryRecursive entry tPath) . treeLineToRecord) . Lazy.lines
 
-instantiateBlobOrTree :: FilePath -> BloopTree -> IO ()
-instantiateBlobOrTree relativePath (Blob bHash bFileName _) =
+-- reads the object from the database and instantiates it.
+-- TODO: this probably belongs scoped inside the above fn. like definitely.
+-- TODO: BloopTree should be BloopRecord. i'm passing in partial objects (blobs with no content) which is janky.
+instantiateTreeEntryRecursive :: BloopTree -> FilePath -> IO ()
+instantiateTreeEntryRecursive o@(Blob bHash bFileName _) relativePath = do
+  putStrLn $ show o
   readObject bHash >>= Lazy.writeFile (relativePath </> bFileName)
-instantiateBlobOrTree _ Tree{} = undefined
+instantiateTreeEntryRecursive o@(Tree tHash tFileName _) relativePath = do
+  putStrLn $ show o
+  instantiateTreeRecursive tHash (relativePath </> tFileName)
 
 -- return a list of files in a directory, excluding stuff that should be ignored
 scanDirectory :: FilePath -> IO [FilePath]
