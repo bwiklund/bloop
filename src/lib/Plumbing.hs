@@ -16,6 +16,7 @@ import System.FilePath ((</>), dropFileName, takeFileName)
 import System.Posix.Files (isDirectory, getFileStatus)
 import Control.Applicative ((<$>), (<*>))
 import Data.Maybe (fromJust)
+import Data.Tuple (swap)
 
 
 type BloopHash = String
@@ -23,7 +24,9 @@ type BloopHash = String
 type BloopPermissions = String -- for now, see below
 
 data BloopObjectType = BlobType | TreeType deriving (Eq, Show)
-strToBloopObjectType str = lookup str [("blob", BlobType), ("tree", TreeType)]
+bloopObjectTypeTokens = [("blob", BlobType), ("tree", TreeType)] -- should not be exported
+strToBloopObjectType str = lookup str bloopObjectTypeTokens
+toString oType = fromJust $ lookup oType $ map swap bloopObjectTypeTokens -- shouldn't be able to fail... unless i make a typo...
 
 -- TODO: combine permissions and bloop object type into one algebraic type, since only a few combos are valid?
 -- the representation of what ends up in tree objects. basically, everything but file contents.
@@ -32,11 +35,15 @@ data BloopPointer = BloopPointer BloopPermissions BloopObjectType BloopHash File
 -- deserialized objects
 -- TODO: separate object from object details (blob/tree/commit/tag)
 data BloopObject
-  = Tree {hash :: BloopHash, fileName :: FilePath, entries :: [BloopObject]}
+  = Tree {hash :: BloopHash, fileName :: FilePath, entries :: [BloopPointer]}
   | Blob {hash :: BloopHash, fileName :: FilePath, fileContents :: Lazy.ByteString}
   deriving (Eq, Show)
 
-buildTree :: FilePath -> [BloopObject] -> BloopObject
+bloopObjectToPointer :: BloopObject -> BloopPointer
+bloopObjectToPointer (Tree oHash oFileName _) = BloopPointer "040000" TreeType oHash oFileName
+bloopObjectToPointer (Blob oHash oFileName _) = BloopPointer "100644" BlobType oHash oFileName
+
+buildTree :: FilePath -> [BloopPointer] -> BloopObject
 buildTree treePath treeEntries = Tree h treePath treeEntries
   where h = blobHash $ serializeTreeEntries treeEntries
 
@@ -66,16 +73,15 @@ decompressSerialized :: Lazy.ByteString -> Lazy.ByteString
 decompressSerialized = Zlib.decompress
 
 serializeObject :: BloopObject -> Lazy.ByteString
-serializeObject (Tree {entries = treeEntries}) = serializeTreeEntries treeEntries
+serializeObject (Tree {entries = treeEntries}) = serializeTreeEntries (map bloopObjectToPointer treeEntries)
 serializeObject (Blob {fileContents = _fileContents}) = _fileContents
 
-serializeTreeEntries :: [BloopObject] -> Lazy.ByteString
-serializeTreeEntries treeEntries = Lazy.pack $ unlines $ map (Lazy.unpack . treeEntryToLine) treeEntries
+serializeTreeEntries :: [BloopPointer] -> Lazy.ByteString
+serializeTreeEntries treeEntries = Lazy.pack $ unlines $ map (Lazy.unpack . treePointerToLine) treeEntries
 
 -- TODO: if we're matching git, the hashes are binary and the names are null terminated.
-treeEntryToLine :: BloopObject -> Lazy.ByteString
-treeEntryToLine blob@Blob{} = Lazy.pack $ concat ["100755 blob ", hash blob, " ", fileName blob]
-treeEntryToLine tree@Tree{} = Lazy.pack $ concat ["040000 tree ", hash tree, " ", fileName tree]
+treePointerToLine :: BloopPointer -> Lazy.ByteString
+treePointerToLine (BloopPointer pPerms pType pHash pFileName) = Lazy.pack $ concat [pPerms, (toString pType), pHash, pFileName]
 
 -- TODO: perms for files
 -- TODO: validate perms and hashes and stuff

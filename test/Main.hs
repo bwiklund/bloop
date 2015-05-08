@@ -28,12 +28,12 @@ tests = TestList $ map TestCase
   , assertEqual
       "tree -> blob entry serialization"
       (Lazy.pack "100755 blob 08cf6101416f0ce0dda3c80e627f333854c4085c foo.txt")
-      (treeEntryToLine (Blob "08cf6101416f0ce0dda3c80e627f333854c4085c" "foo.txt" "test content"))
+      (treePointerToLine (BloopPointer "040000" BlobType "08cf6101416f0ce0dda3c80e627f333854c4085c" "foo.txt"))
 
   , assertEqual
       "tree -> tree entry serialization"
       (Lazy.pack "040000 tree 08cf6101416f0ce0dda3c80e627f333854c4085c fooDirectory")
-      (treeEntryToLine (Tree "08cf6101416f0ce0dda3c80e627f333854c4085c" "fooDirectory" []))
+      (treePointerToLine (BloopPointer "040000" TreeType "08cf6101416f0ce0dda3c80e627f333854c4085c" "fooDirectory"))
 
   , assertEqual
       "tree entry deserialized -> tree"
