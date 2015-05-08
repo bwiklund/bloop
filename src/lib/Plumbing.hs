@@ -14,15 +14,23 @@ import qualified Codec.Compression.Zlib as Zlib
 import System.Directory (createDirectory, createDirectoryIfMissing, getDirectoryContents)
 import System.FilePath ((</>), dropFileName, takeFileName)
 import System.Posix.Files (isDirectory, getFileStatus)
-import Control.Applicative ((<$>))
-
+import Control.Applicative ((<$>), (<*>))
+import Data.Maybe (fromJust)
 
 
 type BloopHash = String
 
+type BloopPermissions = String -- for now, see below
+
+data BloopObjectType = BlobType | TreeType deriving (Eq, Show)
+strToBloopObjectType str = lookup str [("blob", BlobType), ("tree", TreeType)]
+
+-- TODO: combine permissions and bloop object type into one algebraic type, since only a few combos are valid?
+-- the representation of what ends up in tree objects. basically, everything but file contents.
+data BloopPointer = BloopPointer BloopPermissions BloopObjectType BloopHash FilePath deriving (Eq, Show)
+
 -- deserialized objects
 -- TODO: separate object from object details (blob/tree/commit/tag)
--- TODO: break into two data types, objects (the actual data) and pointers (the records in tree objects)?
 data BloopObject
   = Tree {hash :: BloopHash, fileName :: FilePath, entries :: [BloopObject]}
   | Blob {hash :: BloopHash, fileName :: FilePath, fileContents :: Lazy.ByteString}
@@ -68,17 +76,17 @@ serializeTreeEntries treeEntries = Lazy.pack $ unlines $ map (Lazy.unpack . tree
 treeEntryToLine :: BloopObject -> Lazy.ByteString
 treeEntryToLine blob@Blob{} = Lazy.pack $ concat ["100755 blob ", hash blob, " ", fileName blob]
 treeEntryToLine tree@Tree{} = Lazy.pack $ concat ["040000 tree ", hash tree, " ", fileName tree]
--- treeEntryToLine _ = "undefined"
 
--- TODO: record types instead of full object types
 -- TODO: perms for files
-treeLineToRecord :: Lazy.ByteString -> BloopObject
-treeLineToRecord str =
-  case bType of
-    "blob" -> Blob bHash bFileName ""
-    "tree" -> Tree bHash bFileName []
-    _      -> error "not a valid object type"
-  where (_:bType:bHash:bFileName:_) = words $ Lazy.unpack str
+-- TODO: validate perms and hashes and stuff
+treeLineToPointer :: Lazy.ByteString -> Maybe BloopPointer
+treeLineToPointer str =
+  Just BloopPointer <*> Just sPerm <*> strToBloopObjectType sType <*> Just sHash <*> Just sFileName
+  -- case bType of
+  --   "blob" -> Blob bHash bFileName ""
+  --   "tree" -> Tree bHash bFileName []
+  --   _      -> error "not a valid object type"
+  where (sPerm:sType:sHash:sFileName:_) = words $ Lazy.unpack str
 
 
 
@@ -143,14 +151,17 @@ readFileToObject fPath = do
 instantiateTreeRecursive :: BloopHash -> FilePath -> IO ()
 instantiateTreeRecursive tHash tPath = do
   createDirectoryIfMissing True tPath
-  readObject tHash >>= mapM_ ((\entry -> instantiateTreeEntryRecursive entry tPath) . treeLineToRecord) . Lazy.lines
+  pointers <- map treeLineToPointer . Lazy.lines <$> readObject tHash
+  -- fromJust because we DO want to die if something is corrupt (for now)
+  mapM_ (\maybePointer -> instantiateObjectRecursive (fromJust maybePointer) tPath) pointers
 
 -- reads the object from the database and instantiates it.
 -- TODO: this probably belongs scoped inside the above fn. like definitely.
 -- TODO: BloopObject should be BloopRecord. i'm passing in partial objects (blobs with no content) which is janky.
-instantiateTreeEntryRecursive :: BloopObject -> FilePath -> IO ()
-instantiateTreeEntryRecursive (Blob bHash bFileName _) relativePath = readObject bHash >>= Lazy.writeFile (relativePath </> bFileName)
-instantiateTreeEntryRecursive (Tree tHash tFileName _) relativePath = instantiateTreeRecursive tHash (relativePath </> tFileName)
+instantiateObjectRecursive :: BloopPointer -> FilePath -> IO ()
+instantiateObjectRecursive (BloopPointer pPerms pType pHash pFileName) relativePath
+  | pType == TreeType = instantiateTreeRecursive pHash (relativePath </> pFileName)
+  | pType == BlobType = readObject pHash >>= Lazy.writeFile (relativePath </> pFileName)
 
 -- return a list of files in a directory, excluding stuff that should be ignored
 scanDirectory :: FilePath -> IO [FilePath]
